@@ -14,7 +14,12 @@ display(final_df)
 
 # COMMAND ----------
 
-display(cust_feat)
+display(final_df)
+
+# COMMAND ----------
+
+churned_pred_df = spark.table("dtoc_db.dtoc_customer_churn_pred")
+display(churned_pred_df)
 
 # COMMAND ----------
 

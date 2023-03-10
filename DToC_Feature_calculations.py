@@ -188,13 +188,86 @@ display(customer_detailed_labelled_df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### write detailed customer profile to DBFS
+# MAGIC ## Customer importance score
+
+# COMMAND ----------
+
+#customer_detailed_labelled_df = spark.table('dtoc_db.dtoc_customer_features')
 
 # COMMAND ----------
 
 '''
-customer_detailed_labelled_df.write \
-  .mode("overwrite") \
-  .option("overewriteschema", "true") \
-  .saveAsTable("dtoc_db.dtoc_customer_features")
+All value transform within range of 0-1
+avg(energy_buying_strength
+transportaion_buying_strength
+IT_buying_strength)
+
+company_stage - stable 2 , growing 3, decline 1
+
+avg_mnthly_txn_value
+avg_mnthly_txn_count
+
+age_months
+
+total_card_count
 '''
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_score =  customer_detailed_labelled_df\
+.withColumn('buy_strength', (f.col('energy_buying_strength') + f.col('transportaion_buying_strength') + f.col('IT_buying_strength'))/3)\
+.withColumn('company_stage_score', when(f.col('company_stage') == 'decline', 1)\
+           .when(f.col('company_stage') == 'stable', 2)\
+           .when(f.col('company_stage') == 'growing', 3)\
+           .otherwise(0))\
+.select(['customer_id','buy_strength','company_stage_score','avg_mnthly_txn_value','avg_mnthly_txn_count','age_months','total_card_count'])\
+.toPandas()
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_score
+
+# COMMAND ----------
+
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import pandas as pd
+
+features = ['buy_strength','company_stage_score','avg_mnthly_txn_value','avg_mnthly_txn_count','age_months','total_card_count']
+#autoscaler = StandardScaler()
+#customer_detailed_labelled_df_score[features] = autoscaler.fit_transform(customer_detailed_labelled_df_score[features])
+
+scaler = MinMaxScaler()
+# transform data
+customer_detailed_labelled_df_score[features] = scaler.fit_transform(customer_detailed_labelled_df_score[features])
+
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_score
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_score['importance_score'] = customer_detailed_labelled_df_score[features].sum(axis=1).round(2)
+customer_detailed_labelled_df_score
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_final = customer_detailed_labelled_df.join(spark.createDataFrame(customer_detailed_labelled_df_score).select(['customer_id','importance_score']),['customer_id'], 'left')
+display(customer_detailed_labelled_df_final)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## write detailed customer profile to DBFS
+
+# COMMAND ----------
+
+customer_detailed_labelled_df_final.write\
+  .mode("overwrite")\
+  .option("overewriteschema", "true")\
+  .option('checkLatestSchemaOnRead','false')\
+  .saveAsTable("dtoc_db.dtoc_customer_features")
+
+# COMMAND ----------
+
+

@@ -5,11 +5,13 @@
 # COMMAND ----------
 
 from pyspark.sql import functions as F 
+from pyspark.sql.functions import lit,unix_timestamp
 import random
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import mlflow
+import datetime, time
 
 # COMMAND ----------
 
@@ -18,7 +20,7 @@ import mlflow
 
 # COMMAND ----------
 
-non_churn_cust_df = spark.table('dtoc_db.dtoc_customer_features').filter(F.col('churn') == 'N').limit(1000)
+non_churn_cust_df = spark.table('dtoc_db.dtoc_customer_features').filter(F.col('churn') == 'N').sample(False, 0.1, seed=0)
 non_churn_cust_df.display()
 
 # COMMAND ----------
@@ -59,8 +61,8 @@ def rule_1(df):
         .withColumn('avg_mnthly_txn_value_simulated', F.col('avg_mnthly_txn_value')-(F.col('avg_mnthly_txn_value')* (random.choice(np.arange(0.5, 1, 0.05)))))\
         .withColumn('avg_mnthly_txn_count_simulated', F.col('avg_mnthly_txn_value')-(F.col('avg_mnthly_txn_value')* (random.choice(np.arange(0.5, 1, 0.05)))))\
         .withColumn('active_card_count_simulated', F.lit(0))\
-        .withColumn('inactive_card_count_simulated', (F.col('total_card_count'))- (F.col('suspended_card_count')))
-        #.withColumn('visiting_site_count_simulated', (F.col('visiting_site_count'))-(F.col('visiting_site_count')* (random.choice(np.arange(0.7, 1, 0.1)))))
+        .withColumn('inactive_card_count_simulated', (F.col('total_card_count'))- (F.col('suspended_card_count')))\
+        .withColumn('visiting_site_count_simulated', (F.col('visiting_site_count'))-(F.col('visiting_site_count')* (random.choice(np.arange(0.7, 1, 0.1)))))
         return(ukraine_cust_sample_simulated)
     except Exception as e:
         print(e)
@@ -85,10 +87,10 @@ def rule_2(df):
 # COMMAND ----------
 
 rule_1_df = rule_1(non_churn_cust_df)
-display(rule_1_df)
+#display(rule_1_df)
 #rule_2_df = rule_2(non_churn_cust_df)
 simulated_df = rule_1_df 
-simulated_df2 = simulated_df.drop(*['avg_mnthly_txn_value','avg_mnthly_txn_count','active_card_count','inactive_card_count','customer_created_date','churn'])
+simulated_df2 = simulated_df.drop(*['avg_mnthly_txn_value','avg_mnthly_txn_count','active_card_count','inactive_card_count','visiting_site_count','customer_created_date','churn'])
 #display(simulated_df2)
 for column in simulated_df2.columns:
     simulated_df2 = simulated_df2.withColumnRenamed(column, column.replace('_simulated',''))
@@ -98,7 +100,7 @@ residual_df = non_churn_cust_df.join(simulated_df2.select(['customer_id']),['cus
 
 simulated_residual_df = residual_df.unionByName(simulated_df2)
 #simulated_residual_df = simulated_residual_df.drop(*['avg_mnthly_txn_value','avg_mnthly_txn_count','customer_created_date','churn'])
-simulated_df_for_model_feed = simulated_residual_df.drop('customer_id')
+simulated_df_for_model_feed = simulated_residual_df.drop('customer_id','importance_score')
 
 
 
@@ -117,7 +119,7 @@ simulated_df_for_model_feed_pd_OHE = pd.get_dummies(simulated_df_for_model_feed_
 
 # COMMAND ----------
 
-simulated_df_for_model_feed_pd_OHE
+#simulated_df_for_model_feed_pd_OHE
 
 # COMMAND ----------
 
@@ -141,7 +143,15 @@ model_log_cols = ['total_txn_count',
 for cols in model_log_cols:
     simulated_spark_df = simulated_spark_df.withColumnRenamed(cols,cols+'_log')
     
+#display(simulated_spark_df)
+
+# COMMAND ----------
+
 display(simulated_spark_df)
+
+# COMMAND ----------
+
+simulated_spark_df_pd = simulated_spark_df.toPandas()
 
 # COMMAND ----------
 
@@ -177,8 +187,19 @@ display(final_df)
 
 # COMMAND ----------
 
-churned_cust_pred =  final_df.filter(F.col('predictions') == 1)
+
+timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+churned_cust_pred =  final_df.filter(F.col('predictions') == 1)\
+                            .withColumn('prediction_date_time',unix_timestamp(lit(timestamp),'yyyy-MM-dd HH:mm:ss').cast("timestamp"))
+
 display(churned_cust_pred)
+
+# COMMAND ----------
+
+churned_cust_pred.write \
+  .mode("append") \
+  .option("overewriteschema", "true") \
+  .saveAsTable("dtoc_db.dtoc_customer_churn_pred")
 
 # COMMAND ----------
 
