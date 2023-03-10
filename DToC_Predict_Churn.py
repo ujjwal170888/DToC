@@ -53,7 +53,7 @@ def rule_1(df):
     '''
     '''
     try:
-        country = 'Ukraine'
+        country = 'Netherlands'
         ukraine_cust = df.filter(F.col('registered_country') == country)
         #Randomly sample 30% of the data without replacement
         ukraine_cust_sample = ukraine_cust.sample(False, 0.5, seed=0)
@@ -197,7 +197,7 @@ display(churned_cust_pred)
 # COMMAND ----------
 
 churned_cust_pred.write \
-  .mode("append") \
+  .mode("overwrite") \
   .option("overewriteschema", "true") \
   .saveAsTable("dtoc_db.dtoc_customer_churn_pred")
 
