@@ -270,4 +270,9 @@ customer_detailed_labelled_df_final.write\
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC select * from dtoc_db.dtoc_customer_features
+
+# COMMAND ----------
+
 
